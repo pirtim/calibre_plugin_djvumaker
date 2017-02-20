@@ -6,7 +6,7 @@ __copyright__ = '2015, Joey Korkames <http://github.com/kfix>'
 __docformat__ = 'restructuredtext en'
 
 PLUGINNAME = 'djvumaker'
-PLUGINVER = (1,0,2)
+PLUGINVER = (1,1,2)
 
 if __name__ == '__main__':
     import sys
@@ -170,9 +170,9 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
                  os.system("brew install caskroom/cask/brew-cask; brew cask install djview")
    	         #need a cask for the caminova finder/safari plugin too
 	   #todo: make more install scripts
-	   elif islinux: raise
-	   elif iswindows: raise
-	   elif isbsd: raise
+	   elif islinux: raise Exception('Only OSx supported')
+	   elif iswindows: raise Exception('Only OSx supported')
+	   elif isbsd: raise Exception('Only OSx supported')
         else: 
 	   '`calibre-debug -r djvumaker test.pdf` -> tempfile(test.djvu)'
 	   if is_rasterbook(id_or_path):
@@ -276,4 +276,4 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
                   t.conn.close()
      	          prints("%s: signalled Calibre GUI refresh" % PLUGINNAME)
 	else:
-	    raise #ConversionError
+	    raise Exception('ConversionError')
