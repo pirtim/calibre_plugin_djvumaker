@@ -64,56 +64,60 @@ def mupdf(srcdoc, cmdflags=[], log=None):
     #mutool extract
     pass
 
-def job_handler(f):
-    @wraps(f)
-    def wrapper(srcdoc, cmdflags=[], log=None, *args, **kwargs):
-        if 'CALIBRE_WORKER' in os.environ:
-            cmdbuf = 0 #running as a fork_job, all process output piped to logfile, so don't buffer
-        else:
-            cmdbuf = 1 #line-buffered
+# do not work
+def job_handler(backend_name):
+    def job_handler_decorator(f):
+        @wraps(f)
+        def wrapper(srcdoc, cmdflags=[], log=None, *args, **kwargs):
+            '''Wraps around every backend.'''
+            if 'CALIBRE_WORKER' in os.environ:
+                #running as a fork_job, all process output piped to logfile, so don't buffer
+                cmdbuf = 0
+            else:
+                cmdbuf = 1 #line-buffered
 
-        if log: #divert our streaming output printing to the caller's logger
-            prints = partial(log.prints, 1) #log.print(INFO, yaddayadda)
-        else:
-            #def prints(p): print p
-            prints = sys.stdout.write
-            #prints = sys.__stdout__.write #unredirectable original fd
-            #`pip sarge` makes streaming subprocesses easier than sbp.Popen
+            if log: #divert our streaming output printing to the caller's logger
+                prints = partial(log.prints, 1) #log.print(INFO, yaddayadda)
+            else:
+                #def prints(p): print p
+                prints = sys.stdout.write
+                #prints = sys.__stdout__.write #unredirectable original fd
+                #`pip sarge` makes streaming subprocesses easier than sbp.Popen
 
-        bookname = os.path.splitext(os.path.basename(srcdoc))[0]
-        with PersistentTemporaryFile(bookname + '.djvu') as djvu: #note, PTF() is from calibre
-            try:
-                prints("{}: with PersistentTemporaryFile".format(PLUGINNAME))
-                env = os.environ
-                cmd = f(srcdoc, cmdflags, djvu, *args, **kwargs)
-                if isosx: env['PATH'] = "/usr/local/bin:" + env['PATH'] # Homebrew
-                prints('%s: subprocess: %s' % (PLUGINNAME, cmd))
+            bookname = os.path.splitext(os.path.basename(srcdoc))[0]
+            with PersistentTemporaryFile(bookname + '.djvu') as djvu: #note, PTF() is from calibre
+                try:
+                    prints("{}: with PersistentTemporaryFile".format(PLUGINNAME))
+                    env = os.environ
+                    cmd = f(srcdoc, cmdflags, djvu, *args, **kwargs)
+                    if isosx: env['PATH'] = "/usr/local/bin:" + env['PATH'] # Homebrew
+                    prints('%s: subprocess: %s' % (PLUGINNAME, cmd))
 
-                proc = subprocess.Popen(cmd, env=env, bufsize=cmdbuf, stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT)
-                #stderr:csepdjvu, stdout: ghostscript & djvudigital
-                if cmdbuf > 0: #stream the output
-                    while proc.poll() is None: prints(proc.stdout.readline())
-                    #remainder of post-polled buffer
-                    for line in proc.stdout.read().split('\n'): prints(line)
-                else:
-                    proc.communicate()
-                prints('%s: subprocess returned %s' % (PLUGINNAME, proc.returncode))
-            except OSError as e:
-                if e.errno == errno.ENOENT:
-                    prints('%s: $PATH[%s]/djvudigital script not available to perform conversion:\
-                           djvulibre must be installed' % (PLUGINNAME, os.environ['PATH']))
-                return False
+                    proc = subprocess.Popen(cmd, env=env, bufsize=cmdbuf, stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT)
+                    #stderr:csepdjvu, stdout: ghostscript & djvudigital
+                    if cmdbuf > 0: #stream the output
+                        while proc.poll() is None: prints(proc.stdout.readline())
+                        #remainder of post-polled buffer
+                        for line in proc.stdout.read().split('\n'): prints(line)
+                    else:
+                        proc.communicate()
+                    prints('%s: subprocess returned %s' % (PLUGINNAME, proc.returncode))
+                except OSError as e:
+                    if e.errno == errno.ENOENT:
+                        prints('{}: $PATH[{}]/{} script not available to perform conversion:\
+ {} must be installed'.format(PLUGINNAME, os.environ['PATH'], f.__name__, backend_name))
+                    return False
+                if proc.returncode != 0: return False #10 djvudigital shell/usage error
+                return djvu.name
+        return wrapper
+    return job_handler_decorator
 
-            if proc.returncode != 0: return False #10 djvudigital shell/usage error
-            return djvu.name
-    return wrapper
-
-@job_handler
+@job_handler('pdf2djvu')
 def pdf2djvu(srcdoc, cmdflags, djvu):
     return ['pdf2djvu'] + ['-o', djvu.name, srcdoc] # command passed to subprocess
 
-@job_handler
+@job_handler('djvulibre')
 def djvudigital(srcdoc, cmdflags, djvu):
     return ['djvudigital'] + cmdflags + [srcdoc, djvu.name] # command passed to subprocess
 
@@ -294,8 +298,8 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
     #elif hasattr(self, gui): #if we have the calibre gui running, we can give it a threadedjob and not use fork_job
         else: #!fork_job & !gui
             print("Starts djvudigital")
-            # djvu = djvudigital(path_to_ebook, cmdflags, log)
-            djvu = pdf2djvu(path_to_ebook, cmdflags, log)
+            djvu = djvudigital(path_to_ebook, cmdflags, log)
+            # djvu = pdf2djvu(path_to_ebook, cmdflags, log)
 
         if djvu:
             db.new_api.add_format(book_id, 'DJVU', djvu, run_hooks=True)
