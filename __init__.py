@@ -195,74 +195,64 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
     def customization_help(self, gui=False):
         return 'Enter additional `djvudigital --help` command-flags here:'
         # os.system('MANPAGER=cat djvudigital --help')
-    #TODO: make custom config widget so we can have attrs for each of the wrappers:
-    # djvudigital minidjvu, c44, etc.
-    #TODO: `man2html djvumaker` and gui=True for comprehensive help?
+        #TODO: make custom config widget so we can have attrs for each of the wrappers:
+        # djvudigital minidjvu, c44, etc.
+        #TODO: `man2html djvumaker` and gui=True for comprehensive help?
 
     def cli_main(self, args):
-        def prints(p):
-            print(p)
+        '''Handles plugin cli interface'''
         args = args[1:] # args[0] = PLUGINNAME
         prints(args) # DEBUG
         
-        # set arguments parsing
         parser = argparse.ArgumentParser(prog="calibre-debug -r {} -- ".format(PLUGINNAME))
-        parser.add_argument('-V', '--version', action='version', version='v{}'.format(PLUGINVER_DOT))
-        subparsers = parser.add_subparsers(metavar='command')
-        parser_install_deps = subparsers.add_parser('convert_all', help='convert all pdf files')
-        parser_install_deps = subparsers.add_parser('install_backend', help='install backend')
-        parser_install_deps.add_argument('backend', choices=['djvudigital', 'pdf2djvu'],
-                                         help='Backend for which dependecies will be installed',
-                                         default='djvudigital')
-        parser_install_deps.set_defaults(func=self.cli_install_backend)
-        parser_set_backend = subparsers.add_parser('set_backend', help='set backend')
-        parser_set_backend.add_argument('backend', choices=['djvudigital', 'pdf2djvu'],
-                                        help='Sets backend for normal usage')
-        parser_set_backend.set_defaults(func=self.cli_set_backend)
-        parser_convert = subparsers.add_parser('convert', help='convert file to djvu')
-        parser_convert.set_defaults(func=self.cli_convert)
+        parser.add_argument('-V', '--version', action='version', version='v{}'.format(PLUGINVER_DOT),
+                            help="show plugin's version number and exit")
+        subparsers = parser.add_subparsers(metavar='command')       
+        
+        parser_backend = subparsers.add_parser('backend', help='Backends handling. See '
+                                               '`{}backend --help`'.format(parser.prog))
+        parser_backend.set_defaults(func=self.cli_backend)
+        parser_backend.add_argument('command', choices=['install', 'set'],
+                                    help='installs or sets backend')
+        parser_backend.add_argument('backend', choices=['djvudigital', 'pdf2djvu'],
+                                         help='choosed backend')
 
+        parser_convert = subparsers.add_parser('convert', help='Convert file to djvu')
+        parser_convert.set_defaults(func=self.cli_convert)
         group_convert = parser_convert.add_mutually_exclusive_group(required=True)
-        group_convert.add_argument('-p', "--path", help="convert file under PATH to djvu using default settings", action="store", type=str)
-        group_convert.add_argument('-i', "--id", help="convert file under path to djvu using default settings", action="store", type=int)
-        group_convert.add_argument("--all", help="convert all pdf files in calibre", action="store_true")
+        group_convert.add_argument('-p', "--path", 
+                                   help="convert file under PATH to djvu using default settings",
+                                   action="store", type=str)
+        group_convert.add_argument('-i', "--id", 
+                                   help="convert file with ID to djvu using default settings", 
+                                   action="store", type=int)
+        group_convert.add_argument("--all", help="convert all pdf files in calibre's library", 
+                                   action="store_true")
+
+        parser_install_deps = subparsers.add_parser('install_deps', 
+            help='(depreciated) alias for `{}backend install djvudigital`'.format(parser.prog))
+        parser_install_deps.set_defaults(func=self.cli_backend, command='install', backend='djvudigital')
+        parser_convert_all  = subparsers.add_parser('convert_all', 
+            help='(depreciated) alias for `{}convert --all`'.format(parser.prog))
+        parser_convert_all.set_defaults(func=self.cli_convert, all=True)
 
         if len(args) == 0:
             parser.print_help()
-            return None
+            return sys.exit()
         options = parser.parse_args(args)
         options.func(options)
             
+    def cli_backend(self, args):
+        if args.command == 'install':
+            self.cli_install_backend(args)
+        elif args.command == 'set':
+            self.cli_set_backend(args)
+        else:
+            raise Exception('Command not recognized.')
+
     def cli_install_backend(self, args):
         print(args.backend)
-        return None
-
-    def cli_set_backend(self, args):
-        print(args.backend)
-        return None
-    
-    def cli_convert(self, args):
-        print(args)
-        # print(args.PATH)
-        # print(args.ID)
-        return None
-
-        if id_or_path.isdigit():
-            '`calibre-debug -r djvumaker 123 #id(123).pdf` -> tempfile(id(123).djvu)'
-            self.postimport(id_or_path, fmt) #bookid and?
-        elif id_or_path == "convert_all":
-            '`calibre-debug -r djvumaker convert_all`'
-            prints("Press Enter to copy-convert all PDFs to DJVU, or CTRL+C to abort...")
-            raw_input('')
-            from calibre.library import db
-            db = db() # initialize calibre library database
-            for book_id in list(db.all_ids()):
-                if db.has_format(book_id, 'DJVU', index_is_id=True):
-                    continue
-                if db.has_format(book_id, 'PDF', index_is_id=True):
-                    db.run_plugins_on_postimport(book_id, 'pdf')
-                    continue
-        elif id_or_path == "install_deps":
+        if args.backend == 'djvudigital':
             if isosx:
                 if os.system("which brew >/dev/null") == 0:
                     os.system("brew install --with-djvu ghostscript")
@@ -276,9 +266,36 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
             elif islinux: raise Exception('Only macOS supported')
             elif iswindows: raise Exception('Only macOS supported')
             elif isbsd: raise Exception('Only macOS supported')
+        elif args.backend == 'pdf2djvu':
+            raise NotImplementedError
         else:
-            '`calibre-debug -r djvumaker test.pdf` -> tempfile(test.djvu)'
+            raise Exception('Backend not recognized.')
+
+    def cli_set_backend(self, args):
+        print(args.backend)
+        return None
+    
+    def cli_convert(self, args):
+        print(args)
+        if args.all:
+            print('in all')
+            return NotImplemented
+            '`calibre-debug -r djvumaker convert_all`'
+            prints("Press Enter to copy-convert all PDFs to DJVU, or CTRL+C to abort...")
+            raw_input('')
+            from calibre.library import db
+            db = db() # initialize calibre library database
+            for book_id in list(db.all_ids()):
+                if db.has_format(book_id, 'DJVU', index_is_id=True):
+                    continue
+                if db.has_format(book_id, 'PDF', index_is_id=True):
+                    db.run_plugins_on_postimport(book_id, 'pdf')
+                    continue
+        elif args.path is not None:
+            print('path')
+            return NotImplemented
             if is_rasterbook(id_or_path):
+                '`calibre-debug -r djvumaker test.pdf` -> tempfile(test.djvu)'
                 djvu = djvudigital(id_or_path)
                 if djvu:
                     prints("\n\nopening djvused in subshell, press Ctrl+D to exit and delete\
@@ -290,9 +307,13 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
                     os.system("stat '%s'" % djvu)
                     os.system("djvused -e dump '%s'" % djvu)
                     os.system("djvused -v '%s'" % djvu)
+        elif args.id is not None:   
+            print('in id')   
+            return NotImplemented    
+            '`calibre-debug -r djvumaker 123 #id(123).pdf` -> tempfile(id(123).djvu)'
+            self.postimport(args.id, fmt) #bookid and?            
 
     # -- calibre filetype plugin mandatory methods --
-
     def run(self, path_to_ebook):
         return path_to_ebook #noop
 
