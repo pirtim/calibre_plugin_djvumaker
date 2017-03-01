@@ -144,7 +144,7 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
         elif args.backend == 'pdf2djvu':
             # raise NotImplementedError
             from calibre_plugins.djvumaker.utils import install_pdf2djvu
-            result = install_pdf2djvu(log=prints)
+            result = install_pdf2djvu(PLUGINNAME, log=prints)
             # path?
             # TODO: give flag where to installed_backend
             # TODO: ask if add to path?
