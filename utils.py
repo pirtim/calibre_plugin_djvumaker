@@ -107,7 +107,7 @@ def discover_backend(backend_name, preferences, folder):
         best_installed_version = version_intlist_to_str(sorted(
             [version_str_to_intlist(version) for version in installed_versions])[-1])
         if backend_path is None:
-            backend_path = create_backend_link(best_installed_version)
+            backend_path = create_backend_link(backend_name, best_installed_version)
     except OSError, IndexError:
         best_installed_version = None
 
@@ -126,58 +126,85 @@ def create_backend_link(backend_name, version):
     return os.path.join(os.path.join('djvumaker', '{}-{}'.format(backend_name, version), backend_name))
 
 def install_pdf2djvu(PLUGINNAME, preferences, log=print):    
-    # log(version_intlist_to_str(find_newest_pdf2dju('djvumaker')))   
-    log(discover_backend('pdf2djvu', preferences, 'djvumaker'))     
-    try:
-        sbp_out = subprocess.check_output([os.path.join('djvumaker', 'pdf2djvu-0.9.5', 'pdf2djvu'),
-            '--version'], stderr= subprocess.STDOUT)
-        curr_version = sbp_out.splitlines()[0].split()[1]
-        log('Version {} of pdf2djvu is found locally.'.format(curr_version))
-    except OSError:
-        curr_version = None
-        log('pdf2djvu is not found locally.')
-    except:
-        log('Output:' + sbp_out)
-        raise
+    backend_path, saved_version, installed_version, path_version = discover_backend('pdf2djvu',
+        preferences, PLUGINNAME)
+    log("DEBUG: ", (backend_path, saved_version, installed_version, path_version))
 
+    local_version = None
+    if saved_version is None and installed_version is None:        
+        log('pdf2djvu was not found in plugin directory.')
+        if path_version is not None:
+            log('Version {} of pdf2djvu was found on your local path env.'.format(path_version))
+            local_version = path_version
+        else:
+            log('pdf2djvu was not found locally.')
+    else:
+        if saved_version is None or (installed_version is not None and saved_version is not None
+                and version_str_to_intlist(installed_version) > version_str_to_intlist(saved_version)):
+            saved_version = installed_version
+            preferences['pdf2djvu']['version'] = installed_version
+            preferences.commit()
+        log('Version {} of pdf2djvu was found in plugin directory.'.format(saved_version))
+        local_version = saved_version
+    
     # DEBUG UN
-    # github_latest_url = r'https://github.com/jwilk/pdf2djvu/releases/latest'
-    # github_page = urllib2.urlopen(github_latest_url)
-    # new_version = get_url_basename(github_page.geturl())
+    log("Checking pdf2djvu's author page for current relase...")
+    github_latest_url = r'https://github.com/jwilk/pdf2djvu/releases/latest'
+    github_page = urllib2.urlopen(github_latest_url)
+    web_version = get_url_basename(github_page.geturl())
 
     # DEBUG DEL
-    new_version = '0.9.5'
-    # curr_version = None
+    # web_version = '0.9.5'
+    # local_version = None    
+    log('Version {} of pdf2djvu is available on program\'s GitHub page.'.format(web_version))
 
-    log('Version {} of pdf2djvu is available on program\'s GitHub page.'.format(new_version))
+    def download_and_unpack():
+        try:
+            fpath = download_pdf2djvu(web_version, log)
+        except:
+            msg = 'Error occured during downloading new relase, you can try manually download current relase from {} and extract it inside calibre/plugins/djvumaker'.format(github_latest_url, os.getcwd())            
+            log(msg)
+            raise
 
+        try:
+            unpack_pdf2djvu(PLUGINNAME, fpath, log)
+        except:
+            msg = 'Error occured during unpacking, check {}/djvumaker folder for archive and try extract it manually inside calibre/plugins/djvumaker'.format(os.getcwd())
+            log(msg)
+            raise
 
-
-    if curr_version is None:
+    if local_version is None:
         if not ask_yesno_input('Do you want to download current version of pdf2djvu?', log):
             return False, None
-        fpath = download_pdf2djvu(new_version, log)
-        unpack_pdf2djvu(PLUGINNAME, fpath, log)
-        return True, new_version
+        download_and_unpack()
+        # fpath = download_pdf2djvu(web_version, log)
+        # unpack_pdf2djvu(PLUGINNAME, fpath, log)
+        return True, web_version
 
-    curr_ver_intlist = version_str_to_intlist(curr_version)
-    new_ver_intlist  = version_str_to_intlist(new_version)    
-    if new_ver_intlist == curr_ver_intlist:                   
-        log('You have already current version of pdf2djvu.')
-        return True, curr_version
-    elif new_ver_intlist > curr_ver_intlist:
-        if not ask_yesno_input('Do you want to download newer version of pdf2djvu?', log):
-            return False, None
-        fpath = download_pdf2djvu(new_version, log)
-        unpack_pdf2djvu(PLUGINNAME, fpath, log)
-        return True, new_version
-    else: #new_ver_intlist < curr_ver_intlist
+    local_ver_intlist = version_str_to_intlist(local_version)
+    new_ver_intlist  = version_str_to_intlist(web_version)    
+    if new_ver_intlist == local_ver_intlist:                   
+        log('You already have locally current version of pdf2djvu.')
+        if saved_version is None and installed_version is None:
+            if ask_yesno_input("Do you want to redownload current version of pdf2djvu to plugin\'s directory? (it isn't necessary)"):
+                download_and_unpack()
+                return True, local_version
+            else:
+                return False, None
+        return True, local_version
+    elif new_ver_intlist > local_ver_intlist:
+        if not ask_yesno_input(
+            'Do you want to download newer version of pdf2djvu to plugin\'s directory?', log):
+            return False, None        
+        download_and_unpack()
+        return True, web_version
+    else: #new_ver_intlist < local_ver_intlist
         raise Exception("Newer local version than current pdf2djvu found.")
 
 def get_url_basename(url):
     return os.path.basename(urlparse.urlsplit(url).path)
 
-def download_pdf2djvu(new_version, log):
+def download_pdf2djvu(web_version, log):
     def gen_zip_url(code):
         return r'https://github.com/jwilk/pdf2djvu/releases/download/{}/pdf2djvu-win32-{}.zip'.format(code, code) 
     def gen_tar_url(code):
@@ -186,10 +213,10 @@ def download_pdf2djvu(new_version, log):
     fallback_version = '0.9.5'
     if iswindows:                   
         fallback_arch_url = gen_zip_url(fallback_version)
-        arch_url = gen_zip_url(new_version)
+        arch_url = gen_zip_url(web_version)
     else:
         fallback_arch_url = gen_tar_url(fallback_version)
-        arch_url = gen_tar_url(new_version)                
+        arch_url = gen_tar_url(web_version)                
     
     # DEBUG DEL
     # arch_url = 'http://pkowalczyk.pl/almost-empty.zip'
@@ -219,8 +246,8 @@ def download_pdf2djvu(new_version, log):
                                     download_progress_bar)
     print()
     if not check_msg(fpath, msg):
-        log('Cannot download current version {} from GitHub.'.format(new_version))
-        if new_version != fallback_version:
+        log('Cannot download current version {} from GitHub.'.format(web_version))
+        if web_version != fallback_version:
             log('Trying download version {}...'.format(fallback_version), download_progress_bar)
             fpath, msg_fallback = urllib.urlretrieve(fallback_arch_url, os.path.join('.','djvumaker', 
                                                      get_url_basename(fallback_arch_url)), 

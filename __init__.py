@@ -39,7 +39,14 @@ if (islinux or isbsd or isosx) and getattr(sys, 'frozen', False):
     #shell messes up escaping of spaced filenames to the script
     # popen = partial(subprocess.Popen, shell=True)
 prints = partial(prints, '{}:'.format(PLUGINNAME)) # for easy printing
-printsd = partial(prints, '{}:'.format('DEBUG')) # for DEBUG msg
+
+DEBUG = True # set True for debugging
+def empty_function(*args, **kwargs):
+    pass
+if DEBUG:
+    printsd = partial(prints, '{}:'.format('DEBUG')) # for DEBUG msg
+else:
+    printsd = empty_function
 
 # -- Calibre Plugin class --
 class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for gui hooks!
@@ -84,7 +91,7 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
         # DEBUG DEL
         use_backend = 'pdf2djvu'
         prints(subprocess.check_output(['pwd']))
-        kwargs['backend_version'] = self.plugin_prefs[use_backend]['version']
+        kwargs['backend_version'] = self.plugin_prefs
 
         return self.REGISTERED_BACKENDS[use_backend](*args, **kwargs)
 
@@ -178,6 +185,7 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
 
         if args.backend in self.REGISTERED_BACKENDS:
             self.plugin_prefs['use_backend'] = args.backend
+            prints('{} successfully set as current backend.'.format(args.backend))
         else:
             raise Exception('Backend not recognized.')
         return None
@@ -460,16 +468,17 @@ def raise_if_not_supported(srcdoc, supported_extensions):
 
 @DJVUmaker.register_backend
 @job_handler
-def pdf2djvu(srcdoc, cmdflags, djvu, backend_version):
+def pdf2djvu(srcdoc, cmdflags, djvu, preferences):
     '''pdf2djvu backend shell command generation'''
     raise_if_not_supported(srcdoc, ['pdf'])
-    prints(backend_version)
+    pdf2djvu_path = discover_backend('pdf2djvu', preferences, PLUGINNAME)
+    prints(pdf2djvu_path)
     # command passed to subprocess
     return [create_backend_link('pdf2djvu', backend_version), '-o', djvu.name, srcdoc]
 
 @DJVUmaker.register_backend
 @job_handler
-def djvudigital(srcdoc, cmdflags, djvu, backend_version):
+def djvudigital(srcdoc, cmdflags, djvu, preferences):
     '''djvudigital backend shell command generation'''    
     raise_if_not_supported(srcdoc, ['pdf', 'ps'])
     return ['djvudigital'] + cmdflags + [srcdoc, djvu.name] # command passed to subprocess
