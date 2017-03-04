@@ -12,18 +12,21 @@ import subprocess
 
 from calibre.constants import (isosx, iswindows, islinux, isbsd)
     
-def create_cli_parser(self_DJVUmaker, PLUGINNAME, PLUGINVER_DOT):
+def create_cli_parser(self_DJVUmaker, PLUGINNAME, PLUGINVER_DOT, REGISTERED_BACKENDS_KEYS):
+    '''Creates CLI for plugin.'''
     parser = argparse.ArgumentParser(prog="calibre-debug -r {} -- ".format(PLUGINNAME))
     parser.add_argument('-V', '--version', action='version', version='v{}'.format(PLUGINVER_DOT),
                         help="show plugin's version number and exit")
     subparsers = parser.add_subparsers(metavar='command')       
+    parser_test = subparsers.add_parser('test')
+    parser_test.set_defaults(func=self_DJVUmaker.cli_test)
     
     parser_backend = subparsers.add_parser('backend', help='Backends handling. See '
                                             '`{}backend --help`'.format(parser.prog))
     parser_backend.set_defaults(func=self_DJVUmaker.cli_backend)
     parser_backend.add_argument('command', choices=['install', 'set'],
                                 help='installs or sets backend')
-    parser_backend.add_argument('backend', choices=['djvudigital', 'pdf2djvu'],
+    parser_backend.add_argument('backend', choices=REGISTERED_BACKENDS_KEYS,
                                         help='choosed backend', nargs="?")
 
     parser_convert = subparsers.add_parser('convert', help='Convert file to djvu')
@@ -47,13 +50,87 @@ def create_cli_parser(self_DJVUmaker, PLUGINNAME, PLUGINVER_DOT):
     parser_convert_all.set_defaults(func=self_DJVUmaker.cli_convert, all=True)
     return parser
 
-def install_pdf2djvu(PLUGINNAME, log=print):
-    # TODO: humanfriendly input
-    try:        
-        # on python 3.3 exist os.which
-        # path?
-        sbp_out = subprocess.check_output(['pdf2djvu', '--version'],
-                                            stderr= subprocess.STDOUT)
+
+def version_str_to_intlist(verstr):
+    '''Conversion from 'x.y.z' to [x, y, z] version format.'''
+    return [int(x) for x in verstr.split('.')]
+def version_intlist_to_str(verintlist):
+    '''Conversion from [x, y, z] to 'x.y.z' version format.'''
+    return '.'.join(map(str,verintlist))
+
+def discover_backend(backend_name, preferences, folder):
+    '''
+    Discovers backend locations and versions. Currently works only for pdf2djvu.
+    Assumes folder structure and existence of backend cli flag --version, 
+    with output in specific format.
+
+    Side effect:
+        If value of version under preferences does not reference to existing installed backend
+        it's updates preferences to recognize this issue (set's value of version to None). 
+
+    Checks:
+        1. Under djvumaker/{backend_name}-{saved_installed_version}/{backend_name}
+        2. Under djvumaker/{backend_name}-{other_versions}/{backend_name}
+        3. Under {backend_name} (it works if backend_name is on PATH ENV)
+
+    Return values:
+    (backend_path, saved_version, best_installed_version, version_under_path)
+    
+    Return values description:
+        1. backend_path            - path to found backend executable
+        2. saved_version           - version saved in plugin JSON file
+        3. best_installed_version  - best version in coresponding folder
+        4. version_under_path      - version of executable under PATH
+    backend_path links to first found version during checks. If it's not found it takes None value.
+    If there is no valid version under value 2, 3 or 4, this value is None.
+    '''
+    # Check 1:
+    backend_path = None
+    saved_version = preferences[backend_name]['version']
+    if saved_version is not None:
+        try:
+            sbp_out = subprocess.check_output([create_backend_link(backend_name, saved_version), 
+                '--version'], stderr= subprocess.STDOUT)
+            backend_path = create_backend_link(backend_name, saved_version)
+        except OSError:
+            saved_version = None
+            # Side effect:
+            preferences[backend_name]['version'] = None
+            preferences.commit()
+
+    # Check 2:
+    try:
+        folders_list = [filename.split('-') for filename in os.listdir(folder) if os.path.isdir(
+            os.path.join(folder, filename))]
+        installed_versions = [folder_name[1] for folder_name in folders_list if 
+            folder_name[0] == backend_name]
+        best_installed_version = version_intlist_to_str(sorted(
+            [version_str_to_intlist(version) for version in installed_versions])[-1])
+        if backend_path is None:
+            backend_path = create_backend_link(best_installed_version)
+    except OSError, IndexError:
+        best_installed_version = None
+
+    # Check 3:
+    try:
+        sbp_out = subprocess.check_output([backend_name, '--version'], stderr= subprocess.STDOUT)
+        version_under_path = sbp_out.splitlines()[0].split()[1]
+        if backend_path is None:
+            backend_path = backend_name
+    except OSError:
+        version_under_path = None
+
+    return backend_path, saved_version, best_installed_version, version_under_path
+
+def create_backend_link(backend_name, version):
+    return os.path.join(os.path.join('djvumaker', '{}-{}'.format(backend_name, version), backend_name))
+
+def install_pdf2djvu(PLUGINNAME, preferences, log=print):    
+    # log(version_intlist_to_str(find_newest_pdf2dju('djvumaker')))   
+    log(discover_backend('pdf2djvu', preferences, 'djvumaker'))     
+    try:
+        sbp_out = subprocess.check_output([os.path.join('djvumaker', 'pdf2djvu-0.9.5', 'pdf2djvu'),
+            '--version'], stderr= subprocess.STDOUT)
         curr_version = sbp_out.splitlines()[0].split()[1]
         log('Version {} of pdf2djvu is found locally.'.format(curr_version))
     except OSError:
@@ -61,42 +138,41 @@ def install_pdf2djvu(PLUGINNAME, log=print):
         log('pdf2djvu is not found locally.')
     except:
         log('Output:' + sbp_out)
-        raise    
+        raise
 
+    # DEBUG UN
     # github_latest_url = r'https://github.com/jwilk/pdf2djvu/releases/latest'
     # github_page = urllib2.urlopen(github_latest_url)
     # new_version = get_url_basename(github_page.geturl())
 
-    # DEBUG
+    # DEBUG DEL
     new_version = '0.9.5'
-    curr_version = None
+    # curr_version = None
 
     log('Version {} of pdf2djvu is available on program\'s GitHub page.'.format(new_version))
 
-    def version_str_to_intlist(verstr):
-        return [int(x) for x in verstr.split('.')]
+
 
     if curr_version is None:
-        log('Do you want to download current version of pdf2djvu?')
-        if raw_input('y/n') != 'y':
-            raise Exception('bad input')
+        if not ask_yesno_input('Do you want to download current version of pdf2djvu?', log):
+            return False, None
         fpath = download_pdf2djvu(new_version, log)
         unpack_pdf2djvu(PLUGINNAME, fpath, log)
-        return 1
+        return True, new_version
 
     curr_ver_intlist = version_str_to_intlist(curr_version)
     new_ver_intlist  = version_str_to_intlist(new_version)    
     if new_ver_intlist == curr_ver_intlist:                   
         log('You have already current version of pdf2djvu.')
+        return True, curr_version
     elif new_ver_intlist > curr_ver_intlist:
-        log('Do you want to download newer version of pdf2djvu?')
-        if raw_input('y/n') != 'y':
-            raise Exception('bad input')
+        if not ask_yesno_input('Do you want to download newer version of pdf2djvu?', log):
+            return False, None
         fpath = download_pdf2djvu(new_version, log)
         unpack_pdf2djvu(PLUGINNAME, fpath, log)
-        return 1    
+        return True, new_version
     else: #new_ver_intlist < curr_ver_intlist
-        raise Exception("Newer version than current pdf2djvu found.")
+        raise Exception("Newer local version than current pdf2djvu found.")
 
 def get_url_basename(url):
     return os.path.basename(urlparse.urlsplit(url).path)
@@ -115,10 +191,9 @@ def download_pdf2djvu(new_version, log):
         fallback_arch_url = gen_tar_url(fallback_version)
         arch_url = gen_tar_url(new_version)                
     
-    #DEBUG
+    # DEBUG DEL
     # arch_url = 'http://pkowalczyk.pl/almost-empty.zip'
     # arch_url = 'http://pkowalczyk.pl/almost-empty.tar.xz'
-
     
 
     def download_progress_bar(i, chunk, full):
@@ -193,3 +268,14 @@ def printProgressBar(iteration, total, prefix = '', suffix = '', decimals = 1, l
     # Print New Line on Complete
     if iteration == total:
         prints()
+
+def ask_yesno_input(question, prints=print):
+    while True:
+        prints(question + ' (y/n)')
+        user_input = raw_input().lower()
+        if user_input == 'y':
+            return True
+        elif user_input == 'n':
+            return False
+        else:
+            prints("Your input is not 'y' or 'n'.")
