@@ -27,7 +27,7 @@ from calibre.constants import (isosx, iswindows, islinux, isbsd)
 from calibre.utils.config import JSONConfig
 from calibre.utils.podofo import get_podofo
 from calibre.utils.ipc.simple_worker import fork_job as worker_fork_job, WorkerError
-from calibre_plugins.djvumaker.utils import create_backend_link, create_cli_parser, install_pdf2djvu
+from calibre_plugins.djvumaker.utils import create_backend_link, create_cli_parser, install_pdf2djvu, discover_backend
 
 # if iswindows and hasattr(sys, 'frozen'):
 #     # CREATE_NO_WINDOW=0x08 so that no ugly console is popped up
@@ -66,13 +66,15 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
         # REGISTERED_BACKENDS = ['pdf2djvu', 'djvudigital']
         # Set default preferences
         DEFAULT_STORE_VALUES = {}
+        DEFAULT_STORE_VALUES['plugin_version'] = PLUGINVER
         for item in self.REGISTERED_BACKENDS:
-            DEFAULT_STORE_VALUES[item] = {'flags' : [], 'installed' : False, 'version' : None}
+            DEFAULT_STORE_VALUES[item] = {
+                'flags' : [], 'installed' : False, 'version' : None}
         if 'djvudigital' in self.REGISTERED_BACKENDS:
             DEFAULT_STORE_VALUES['use_backend'] = 'djvudigital'
         else:
             raise Exception('No djvudigital backend.')
-
+        
         # JSONConfig is a dict-like object,
         # if coresponding .json file has not a specific key, it's got from .defaults
         self.plugin_prefs = JSONConfig(os.path.join('plugins', PLUGINNAME))
@@ -91,7 +93,7 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
         # DEBUG DEL
         use_backend = 'pdf2djvu'
         prints(subprocess.check_output(['pwd']))
-        kwargs['backend_version'] = self.plugin_prefs
+        kwargs['preferences'] = self.plugin_prefs
 
         return self.REGISTERED_BACKENDS[use_backend](*args, **kwargs)
 
@@ -112,7 +114,8 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
         args = args[1:] # args[0] = PLUGINNAME
         printsd('cli_main enter: args: ', args) # DEBUG
         # from calibre_plugins.djvumaker.utils import create_cli_parser
-        parser = create_cli_parser(self, PLUGINNAME, PLUGINVER_DOT, self.REGISTERED_BACKENDS.keys())
+        parser = create_cli_parser(self, PLUGINNAME, PLUGINVER_DOT,
+            self.REGISTERED_BACKENDS.keys())
         if len(args) == 0:
             parser.print_help()
             return sys.exit()
@@ -149,7 +152,8 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
                     raise Exception("Homebrew required."
                                     "Please visit http://github.com/Homebrew/homebrew")
                 if raw_input("Install DjView.app? (y/n): ").lower() == 'y':
-                    os.system("brew install caskroom/cask/brew-cask; brew cask install djview")
+                    os.system("brew install caskroom/cask/brew-cask;"
+                              " brew cask install djview")
                 else:
                     sys.exit()
             #need a cask for the caminova finder/safari plugin too
@@ -212,15 +216,10 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): #multiple inheritance for 
             if is_rasterbook(args.path):
                 '`calibre-debug -r djvumaker test.pdf` -> tempfile(test.djvu)'
                 djvu = self.run_backend(args.path)
-                # if self.plugin_prefs['Options']['use_backend'] == 'djvudigital':
-                #     djvu = djvudigital(args.path)
-                # elif self.plugin_prefs['Options']['use_backend'] == 'pdf2djvu':
-                #     djvu = pdf2djvu(args.path)
-                # TODO: make function from this, to start good backend, maybe second decorator?
                 
                 if djvu:
-                    prints("\n\nopening djvused in subshell, press Ctrl+D to exit and delete\
-                     '%s'\n\n" % djvu)
+                    prints(("\n\nopening djvused in subshell, press Ctrl+D to exit and"
+                           "delete '%s'\n\n") % djvu)
                     #de-munge the tty
                     sys.stdin = sys.__stdin__
                     sys.stdout = sys.__stdout__
@@ -471,10 +470,11 @@ def raise_if_not_supported(srcdoc, supported_extensions):
 def pdf2djvu(srcdoc, cmdflags, djvu, preferences):
     '''pdf2djvu backend shell command generation'''
     raise_if_not_supported(srcdoc, ['pdf'])
-    pdf2djvu_path = discover_backend('pdf2djvu', preferences, PLUGINNAME)
+    pdf2djvu_path, _, __, ___ = discover_backend('pdf2djvu', preferences, PLUGINNAME)
     prints(pdf2djvu_path)
     # command passed to subprocess
-    return [create_backend_link('pdf2djvu', backend_version), '-o', djvu.name, srcdoc]
+    return [pdf2djvu_path, '-o', djvu.name, srcdoc]
+    # return [create_backend_link('pdf2djvu', backend_version), '-o', djvu.name, srcdoc]
 
 @DJVUmaker.register_backend
 @job_handler
