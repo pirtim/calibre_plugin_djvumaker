@@ -341,3 +341,8 @@ def ask_yesno_input(question, prints=print):
             return False
         else:
             prints("Your input is not 'y' or 'n'.")
+
+class EmptyClass():
+    pass
+def empty_function(*args, **kwargs):
+    pass

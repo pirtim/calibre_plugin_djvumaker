@@ -40,8 +40,8 @@ optional arguments:
 
 Features:
 * downloading and installation two backend:
-    * djvudigital (for macOS - through brew)
-    * pdf2djvu (for Windows - through automated download from author's github)
+  * djvudigital (for macOS - through brew)
+  * pdf2djvu (for Windows - through automated download from author's github)
 * discover method - you can just add your existing tool to you PATH env
 * easy-to-use right click menu item for conversion of single or many PDF documents
 * postimport file conversion (curently works only for djvudigital backend)
@@ -49,11 +49,93 @@ Features:
 * CLI support for setting changes, installations of backends and manual conversion of files
 
 Technical details:
+(GitHub repo: https://github.com/kfix/calibre_plugin_djvumaker)
+  Main problems during development:
+    * conversion can be started in 6(?) different ways, every method has to use custom
+        conversion handling
+    * plugins are loaded to Calibre, not imported, hard globals updating
+    * printing has to work for CLI, inside Calibre and inside ThreadedJob
+    * Calibre source is mostly not documented
+
+References:
+--- Globals ---
+PLUGINNAME      -- name of the plugin
+PLUGINVER       -- plugin version in tuple  form, ie: (1,0,2)
+PLUGINVER_DOT   -- plugin version in string form, ie: '1.0.2'
+prints          --
+printsd         --
+
+--- Meaningful imports ---
+from calibre import force_unicode, prints
+from calibre.ebooks import ConversionError
+from calibre.ptempfile import PersistentTemporaryFile
+from calibre.customize import FileTypePlugin, InterfaceActionBase
+from calibre.constants import isosx, iswindows, islinux, isbsd, DEBUG
+from calibre.utils.config import JSONConfig
+from calibre.utils.podofo import get_podofo
+from calibre.utils.ipc.simple_worker import fork_job as worker_fork_job, WorkerError
+# and additional imports from plugin's utils module
+
+DJVUmaker(FileTypePlugin, InterfaceActionBase) -- basic plugin class
+    @classmethod
+    register_backend(cls, fun)
+    __init__(self, *args, **kwargs)
+    --- CLI handling methods ---
+    cli_main(self, args)
+    cli_test(self, args)
+    cli_backend(self, args)
+    cli_install_backend(self, args)
+    cli_set_backend(self, args)
+    cli_set_postimport(self, args)
+    cli_convert(self, args)
+    --- Methods required by Calibre ---
+    customization_help(self, gui=True)
+    run(self, path_to_ebook)
+    postimport(self, book_id, book_format, db)
+    --- Conversion handling methods ---
+    _postimport(self, book_id, book_format=None, db=None, log=None, fork_job=True, abort=None,
+        notifications=None)
+    site_customization_parser(self, use_backend)
+    run_backend(self, *args, **kwargs)
+
+is_rasterbook(path, basic_return=True)
+job_handler(fun)
+class NotSupportedFiletype(Exception)
+raise_if_not_supported(srcdoc, supported_extensions)
+add_method_dec(method, method_name)
+
+
+--- Implemented backends ---
+@DJVUmaker.register_backend
+@job_handler
+@add_method_dec(pdf2djvu_custom_printing, 'printing')
+pdf2djvu(srcdoc, cmdflags, djvu, preferences)
+    .printing = pdf2djvu_custom_printing(readout, pages, images)
+
+@DJVUmaker.register_backend
+@job_handler
+djvudigital(srcdoc, cmdflags, djvu, preferences)
+
+--- Non working backends ---
+c44	    (srcdoc, cmdflags=[], log=None)
+cjb2	(srcdoc, cmdflags=[], log=None)
+minidjvu(srcdoc, cmdflags=[], log=None)
+k2pdfopt(srcdoc, cmdflags=[], log=None)
+mupdf	(srcdoc, cmdflags=[], log=None)
+
+
 
 History of development:
+(https://github.com/pirtim/calibre_plugin_djvumaker/releases)
+v1.1.0 - 01 Apr 2017 - Przemysław Kowalczyk - General code overhaul; pdf2djvu support
+v1.0.2 - 22 Mar 2015 - Joey Korkames - podofo.image_count in is_rasterbook
+v1.0.1 - 19 Oct 2014 - Joey Korkames - Small bug fixes
+v1.0.0 - 25 Jul 2014 - Joey Korkames - First relase
 
 Main TODOs:
+
 """
+
 from __future__ import unicode_literals, division, absolute_import, print_function
 
 __license__ = 'GPL 3'
@@ -69,7 +151,7 @@ if __name__ == '__main__':
     sys.stdout.write(PLUGINVER_DOT) #Makefile needs this to do releases
     sys.exit()
 
-import errno, os, sys, shutil, traceback, argparse, subprocess, collections
+import errno, os, sys, shutil, traceback, subprocess, collections#, argparse # TEST COMMENT
 from functools import partial, wraps
 
 from calibre import force_unicode, prints
@@ -81,7 +163,8 @@ from calibre.utils.config import JSONConfig
 from calibre.utils.podofo import get_podofo
 from calibre.utils.ipc.simple_worker import fork_job as worker_fork_job, WorkerError
 from calibre_plugins.djvumaker.utils import (create_backend_link, create_cli_parser, install_pdf2djvu,
-                                             discover_backend, ask_yesno_input)
+                                             discover_backend, ask_yesno_input, empty_function,
+                                             EmptyClass)
 
 # if iswindows and hasattr(sys, 'frozen'):
 #     # CREATE_NO_WINDOW=0x08 so that no ugly console is popped up
@@ -94,12 +177,7 @@ if (islinux or isbsd or isosx) and getattr(sys, 'frozen', False):
     # popen = partial(subprocess.Popen, shell=True)
 prints = partial(prints, '{}:'.format(PLUGINNAME)) # for easy printing
 
-class EmptyClass():
-    pass
-def empty_function(*args, **kwargs):
-    pass
-
-# DEBIG COMMENT
+# DEBUG COMMENT
 # DEBUG = False
 
 if DEBUG:
@@ -107,24 +185,21 @@ if DEBUG:
 else:
     printsd = empty_function
 
-# LEFT TODO: 1. postimport if file dropped to library or through calibredb add
-# LEFT TODO: 2. postimport if convert all
-# LEFT TODO: 3. testing and documentation
-
 # -- Calibre Plugin class --
 class DJVUmaker(FileTypePlugin, InterfaceActionBase): # multiple inheritance for gui hooks!
     name                = PLUGINNAME # Name of the plugin
     description         = ('Convert raster-based document files (Postscript, PDF) to DJVU with GUI'
                           ' button and on-import')
-    # TODO: ON IMPORT? doesn'work
     supported_platforms = ['linux', 'osx', 'windows'] # Platforms this plugin will run on
     author              = 'Joey Korkames' # The author of this plugin
     version             = PLUGINVER   # The version number of this plugin
     # The file types that this plugin will be automatically applied to
     file_types          = set(['pdf','ps', 'eps'])
     on_postimport       = True # Run this plugin after books are addded to the database
-    minimum_calibre_version = (2, 22, 0) # needs the new db api w/id() bugfix, and podofo.image_count()
-    actual_plugin = 'calibre_plugins.djvumaker.gui:ConvertToDJVUAction' # InterfaceAction plugin location
+    # needs the new db api w/id() bugfix, and podofo.image_count()
+    minimum_calibre_version = (2, 22, 0)
+    # InterfaceAction plugin location
+    actual_plugin = 'calibre_plugins.djvumaker.gui:ConvertToDJVUAction'
     REGISTERED_BACKENDS = collections.OrderedDict()
 
     @classmethod
@@ -383,10 +458,6 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): # multiple inheritance for
     def run(self, path_to_ebook):
         return path_to_ebook # noop
 
-    # def _postimport(self, book_id, book_format=None, db=None, log=None, fork_job=True, abort=None,
-    #                notifications=None):
-    #     pass
-
     def postimport(self, book_id, book_format, db):
         if self.plugin_prefs['postimport']:
             return self._postimport(book_id, book_format, db)
@@ -624,7 +695,8 @@ def job_handler(fun):
                 # stderr: csepdjvu, stdout: ghostscript & djvudigital
                 if cmdbuf > 0: #stream the output
                     while proc.poll() is None:
-                        # TODO: piping print through backend util method, to add custom output handling + notifications about job progress
+                        # TODO: piping print through backend util method, to add custom output handling
+                        #       + notifications about job progress
                         readout = proc.stdout.readline()
                         if force_unicode(readout).strip() != '':
                             # TODO: better custom pringing
