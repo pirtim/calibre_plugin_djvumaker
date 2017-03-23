@@ -56,13 +56,59 @@ Technical details:
 (GitHub repo: https://github.com/kfix/calibre_plugin_djvumaker)
   Main problems during development:
     * has to work with only python2.7 builtins
-    * conversion can be started in 6(?) different ways, every method has to use custom
+    * conversion can be started in 6 (7th NotImplemented) different ways, every method has to use custom
         conversion handling
     * plugins are loaded to Calibre, not imported, problematic globals updating
     * printing has to work for CLI, inside Calibre and inside ThreadedJob
     * Calibre source (https://github.com/kovidgoyal/calibre) is mostly not documented
 
+Conversion can be started through:
+    * right click in GUI menu in library:
+             gui.py:#NODOC:ConvertToDJVUAction.initialization_complete ->
+      ->     gui.py:#NODOC:ConvertToDJVUAction.convert_book ->
+      ->     gui.py:#NODOC:ConvertToDJVUAction._convert_books ->
+      ->     gui.py:#NODOC:ConvertToDJVUAction._tjob_djvu_convert ->
+      ->     gui.py:#NODOC:DJVUPlugin._postimport ->
+      ->__init__.py:#NODOC:DJVUPlugin.run_backend ->
+      ->__init__.py:#NODOC:DJVUPlugin.REGISTERED_BACKENDS[use_backend] ->
+      ->__init__.py:#NODOC:register_backend ->
+      ->__init__.py:#NODOC:job_handler ->
+      ->__init__.py:#NODOC:{pdf2djvu//djvudigital}
+    * right click in GUI menu in library:
+      (currently NotImplemented)
+             gui.py:#NODOC:find_plugin('djvumaker').??? -> ???
+    * through postimport conversion during GUI
+        __init__.py:#NODOC:DJVUPlugin.postimport ->
+      ->__init__.py:#NODOC:DJVUPlugin._postimport ->
+      ->__init__.py:#NODOC:DJVUPlugin.worker_fork_job ->
+      ->__init__.py:#NODOC:DJVUPlugin.plugin_prefs['use_backend'] ->
+      ->__init__.py:#NODOC:job_handler -> ...
+    * through postimport conversion during CLI: `calibre-debug -r djvumaker -- convert --all`
+        __init__.py:#NODOC:DJVUPlugin.cli_main ->
+      ->   utils.py:#NODOC:create_cli_parser ->
+      ->__init__.py:#NODOC:DJVUPlugin.cli_convert ->
+      ->calibre.customize.ui:#NODOC:run_plugins_on_postimport ->
+      ->__init__.py:#NODOC:DJVUPlugin.postimport ->
+      ->__init__.py:#NODOC:DJVUPlugin._postimport ->
+      ->__init__.py:#NODOC:DJVUPlugin.run_backend -> ...
+    * through postimport conversion during CLI: `calibredb add [book]`
+        __init__.py:#NODOC:DJVUPlugin.postimport ->
+      ->__init__.py:#NODOC:DJVUPlugin._postimport ->
+      ->__init__.py:#NODOC:DJVUPlugin.run_backend -> ...
+    * through ID   conversion during CLI: `calibre-debug -r djvumaker -- convert -i ID`
+        __init__.py:#NODOC:DJVUPlugin.cli_main ->
+      ->   utils.py:#NODOC:create_cli_parser ->
+      ->__init__.py:#NODOC:DJVUPlugin.cli_convert ->
+      ->__init__.py:#NODOC:DJVUPlugin.run_backend -> ...
+    * through PATH conversion during CLI: `calibre-debug -r djvumaker -- convert -p PATH`
+        __init__.py:#NODOC:DJVUPlugin.cli_main ->
+      ->   utils.py:#NODOC:create_cli_parser ->
+      ->__init__.py:#NODOC:DJVUPlugin.cli_convert ->
+      ->__init__.py:#NODOC:DJVUPlugin._postimport ->
+      ->__init__.py:#NODOC:DJVUPlugin.run_backend -> ...
 
+
+Helpful informations about writing plugins for Calibre:
 https://manual.calibre-ebook.com/creating_plugins.html
 https://manual.calibre-ebook.com/plugins.html
 https://www.mobileread.com/forums/forumdisplay.php?f=237
@@ -145,7 +191,7 @@ mupdf	(srcdoc, cmdflags=[], log=None)
 
 History of development:
 (https://github.com/pirtim/calibre_plugin_djvumaker/releases)
-v1.1.0 - 01 Apr 2017 - Przemysław Kowalczyk - General code overhaul; pdf2djvu support
+v1.1.0 - 01 Apr 2017 - Przemysław Kowalczyk - General code overhaul; pdf2djvu support; documentation
 v1.0.2 - 22 Mar 2015 - Joey Korkames - podofo.image_count in is_rasterbook
 v1.0.1 - 19 Oct 2014 - Joey Korkames - Small bug fixes
 v1.0.0 - 25 Jul 2014 - Joey Korkames - First relase
