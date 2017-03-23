@@ -6,12 +6,14 @@ Plugin uses other tools (further called backends) to make user-friendly conversi
 of PDF documents (like scanned books) to lightweight DJVU format inside Calibre (e-book manager).
 Plugin makes easy to install and use two backends - djvudigital (for macOS) and pdf2djvu (for Windows).
 
+
 Usage:
 (after installation of plugin and dowloading a suitable backend - look at CLI)
 * right click on PDF file inside calibre, conversion occures after clicking
     on `Convert to DJVU` in `Convert books` submenu
 * (after turning on automatic postimport conversion - look at CLI) just add pdf file to Calibre library, conversion should automaticly start
 * through CLI, with commends `calibre-debug -r djvumaker -- convert [-p PATH, -i ID, --all]`
+
 
 CLI - Command-line interface:
 usage: calibre-debug -r djvumaker --  [-h] [-V] command ...
@@ -38,6 +40,7 @@ optional arguments:
   -h, --help     show help message and exit
   -V, --version  show plugin's version number and exit
 
+
 Features:
 * downloading and installation two backend:
   * djvudigital (for macOS - through brew)
@@ -48,14 +51,17 @@ Features:
 * notification about current conversion progress for (curently works only for pdf2djvu backend)
 * CLI support for setting changes, installations of backends and manual conversion of files
 
+
 Technical details:
 (GitHub repo: https://github.com/kfix/calibre_plugin_djvumaker)
   Main problems during development:
+    * has to work with only python2.7 builtins
     * conversion can be started in 6(?) different ways, every method has to use custom
         conversion handling
     * plugins are loaded to Calibre, not imported, problematic globals updating
     * printing has to work for CLI, inside Calibre and inside ThreadedJob
     * Calibre source (https://github.com/kovidgoyal/calibre) is mostly not documented
+
 
 https://manual.calibre-ebook.com/creating_plugins.html
 https://manual.calibre-ebook.com/plugins.html
@@ -91,43 +97,43 @@ from calibre.utils.ipc.simple_worker import fork_job as worker_fork_job -- #NODO
 DJVUmaker(FileTypePlugin, InterfaceActionBase)  -- basic plugin class
     .__init__(self, *args, **kwargs)    -- mainly setting up JSONConfig object
     --- CLI handling methods ---
-    .cli_main(self, args)   -- #NODOC
-    .cli_test(self, args)
-    .cli_backend(self, args)
-    .cli_install_backend(self, args)
-    .cli_set_backend(self, args)
-    .cli_set_postimport(self, args)
-    .cli_convert(self, args)
+    .cli_main(self, args)               -- #NODOC
+    .cli_test(self, args)               -- #NODOC
+    .cli_backend(self, args)            -- #NODOC
+    .cli_install_backend(self, args)    -- #NODOC
+    .cli_set_backend(self, args)        -- #NODOC
+    .cli_set_postimport(self, args)     -- #NODOC
+    .cli_convert(self, args)            -- #NODOC
     --- Methods required by Calibre ---
-    .customization_help(self, gui=True)
-    .run(self, path_to_ebook)       -- empty method,
-    .postimport(self, book_id, book_format, db)
+    .customization_help(self, gui=True) -- return message inside "Customize plugin" menu
+    .run(self, path_to_ebook)   -- #NODOC
+    .postimport(self, book_id, book_format, db) -- start when PDF is added to library and `convert --all`
     --- Conversion handling methods ---
     @classmethod
-    .register_backend(cls, fun)
+    .register_backend(cls, fun) -- adds backend to plugin
     ._postimport(self, book_id, book_format=None, db=None, log=None, fork_job=True, abort=None,
-        notifications=None)
-    .site_customization_parser(self, use_backend)
-    .run_backend(self, *args, **kwargs)
+        notifications=None)     -- starting jobs method
+    .site_customization_parser(self, use_backend) -- parse user setting from "Customize plugin" menu
+    .run_backend(self, *args, **kwargs) -- choose backend to run
 
-NotSupportedFiletype(Exception)
+NotSupportedFiletype(Exception) -- #NODOC
 
 --- Functions ---
 
-is_rasterbook(path, basic_return=True)
-raise_if_not_supported(srcdoc, supported_extensions)
-job_handler(fun)
+is_rasterbook(path, basic_return=True) -- #NODOC
+raise_if_not_supported(srcdoc, supported_extensions) -- #NODOC
+job_handler(fun) -- #NODOC
 
     --- Implemented backends ---
 @DJVUmaker.register_backend
 @job_handler
 @add_method_dec(pdf2djvu_custom_printing, 'printing')
-pdf2djvu(srcdoc, cmdflags, djvu, preferences)
-    .printing = pdf2djvu_custom_printing(readout, pages, images)
+pdf2djvu(srcdoc, cmdflags, djvu, preferences)   -- #NODOC
+    .printing = pdf2djvu_custom_printing(readout, pages, images) -- custom printing and notifications
 
 @DJVUmaker.register_backend
 @job_handler
-djvudigital(srcdoc, cmdflags, djvu, preferences)
+djvudigital(srcdoc, cmdflags, djvu, preferences) -- #NODOC
 
     --- Non working backends ---
 c44	    (srcdoc, cmdflags=[], log=None)
@@ -137,7 +143,6 @@ k2pdfopt(srcdoc, cmdflags=[], log=None)
 mupdf	(srcdoc, cmdflags=[], log=None)
 
 
-
 History of development:
 (https://github.com/pirtim/calibre_plugin_djvumaker/releases)
 v1.1.0 - 01 Apr 2017 - Przemysław Kowalczyk - General code overhaul; pdf2djvu support
@@ -145,11 +150,22 @@ v1.0.2 - 22 Mar 2015 - Joey Korkames - podofo.image_count in is_rasterbook
 v1.0.1 - 19 Oct 2014 - Joey Korkames - Small bug fixes
 v1.0.0 - 25 Jul 2014 - Joey Korkames - First relase
 
+
 Main TODOs:
-
-
-(troughout the file TODO are placed)
-
+(TODOs are also placed troughout the files)
+* (E) substitute #NODOC with documentation
+* (E) installation scripts for pdf2djvu for not Windows
+* (E) proper english
+* (M) add better Notifications (conversion progress reporting) support
+* (M) inside gui.py -> _tjob_djvu_convert -> elif fpath -- conversion for devices
+* (M) custom printing for djvudigital with notification support
+* (M) pdf2djvu installation with GitHub API v3
+* (M-H) custom scripts for conversion
+* (M-H) installation scripts for djvudigital for not macOS
+* (M-H) add other backend support
+* (M-H) pdf2djvu doesn't work for postimport
+* (H) plugin settings QT widget
+* (H) add support for conversion from other docs
 """
 
 from __future__ import unicode_literals, division, absolute_import, print_function
@@ -320,8 +336,6 @@ class DJVUmaker(FileTypePlugin, InterfaceActionBase): # multiple inheritance for
         # TODO: make custom config widget so we can have attrs for each of the wrappers:
         #       djvudigital minidjvu, c44, etc.
         # TODO: `man2html djvumaker` and gui=True for comprehensive help?
-        # TODO: add information if curently is overriend by customization help
-
 
     def cli_main(self, args):
         '''Handles plugin cli interface'''
