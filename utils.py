@@ -346,3 +346,10 @@ class EmptyClass():
     pass
 def empty_function(*args, **kwargs):
     pass
+
+# DEBUG DEL
+def add_method_dec(method, method_name):
+    def inner(fun):
+        setattr(fun, method_name, method)
+        return fun
+    return inner

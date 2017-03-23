@@ -13,7 +13,7 @@ Usage:
 * (after turning on automatic postimport conversion - look at CLI) just add pdf file to Calibre library, conversion should automaticly start
 * through CLI, with commends `calibre-debug -r djvumaker -- convert [-p PATH, -i ID, --all]`
 
-CLI:
+CLI - Command-line interface:
 usage: calibre-debug -r djvumaker --  [-h] [-V] command ...
 positional arguments:
   command
@@ -53,59 +53,72 @@ Technical details:
   Main problems during development:
     * conversion can be started in 6(?) different ways, every method has to use custom
         conversion handling
-    * plugins are loaded to Calibre, not imported, hard globals updating
+    * plugins are loaded to Calibre, not imported, problematic globals updating
     * printing has to work for CLI, inside Calibre and inside ThreadedJob
-    * Calibre source is mostly not documented
+    * Calibre source (https://github.com/kovidgoyal/calibre) is mostly not documented
+
+https://manual.calibre-ebook.com/creating_plugins.html
+https://manual.calibre-ebook.com/plugins.html
+https://www.mobileread.com/forums/forumdisplay.php?f=237
+
 
 References:
+--- Modules ---
+gui.py      -- handles GUI connection
+utils.py    -- utility methods, CLI generation, pdf2djvu installtion scripts
+
 --- Globals ---
-PLUGINNAME      -- name of the plugin
-PLUGINVER       -- plugin version in tuple  form, ie: (1,0,2)
-PLUGINVER_DOT   -- plugin version in string form, ie: '1.0.2'
-prints          --
-printsd         --
+PLUGINNAME      -- name of the plugin, i.e.: 'djvumaker'
+PLUGINVER       -- plugin version in tuple  form, i.e.: (1,0,2)
+PLUGINVER_DOT   -- plugin version in string form, i.e.: '1.0.2'
+prints          -- prints function from Calibre, prepanded with string: 'djvumaker: '
+printsd         -- prints function from Calibre, prepanded with string: 'DEBUG: djvumaker: '
 
 --- Meaningful imports ---
-from calibre import force_unicode, prints
-from calibre.ebooks import ConversionError
-from calibre.ptempfile import PersistentTemporaryFile
-from calibre.customize import FileTypePlugin, InterfaceActionBase
-from calibre.constants import isosx, iswindows, islinux, isbsd, DEBUG
-from calibre.utils.config import JSONConfig
-from calibre.utils.podofo import get_podofo
-from calibre.utils.ipc.simple_worker import fork_job as worker_fork_job, WorkerError
+from calibre import force_unicode,  -- output from other tools should be one time(!) piped through
+                    prints          -- #NODOC
+from calibre.customize import FileTypePlugin, InterfaceActionBase -- plugin classes for inheritance
+from calibre.customize.ui import run_plugins_on_postimport -- Calibre runs every filetypeplugin with
+                                                              postimport settings turned on
+from calibre.constants import isosx, iswindows, islinux, isbsd, DEBUG -- self explanatory bools
+from calibre.utils.config import JSONConfig -- dict-like object for storing settings in JSON file
+from calibre.utils.podofo import get_podofo -- #NODOC
+from calibre.utils.ipc import RC    -- #NODOC
+from calibre.utils.ipc.simple_worker import fork_job as worker_fork_job -- #NODOC
 # and additional imports from plugin's utils module
 
-DJVUmaker(FileTypePlugin, InterfaceActionBase) -- basic plugin class
-    @classmethod
-    register_backend(cls, fun)
-    __init__(self, *args, **kwargs)
+--- Classes ---
+DJVUmaker(FileTypePlugin, InterfaceActionBase)  -- basic plugin class
+    .__init__(self, *args, **kwargs)    -- mainly setting up JSONConfig object
     --- CLI handling methods ---
-    cli_main(self, args)
-    cli_test(self, args)
-    cli_backend(self, args)
-    cli_install_backend(self, args)
-    cli_set_backend(self, args)
-    cli_set_postimport(self, args)
-    cli_convert(self, args)
+    .cli_main(self, args)   -- #NODOC
+    .cli_test(self, args)
+    .cli_backend(self, args)
+    .cli_install_backend(self, args)
+    .cli_set_backend(self, args)
+    .cli_set_postimport(self, args)
+    .cli_convert(self, args)
     --- Methods required by Calibre ---
-    customization_help(self, gui=True)
-    run(self, path_to_ebook)
-    postimport(self, book_id, book_format, db)
+    .customization_help(self, gui=True)
+    .run(self, path_to_ebook)       -- empty method,
+    .postimport(self, book_id, book_format, db)
     --- Conversion handling methods ---
-    _postimport(self, book_id, book_format=None, db=None, log=None, fork_job=True, abort=None,
+    @classmethod
+    .register_backend(cls, fun)
+    ._postimport(self, book_id, book_format=None, db=None, log=None, fork_job=True, abort=None,
         notifications=None)
-    site_customization_parser(self, use_backend)
-    run_backend(self, *args, **kwargs)
+    .site_customization_parser(self, use_backend)
+    .run_backend(self, *args, **kwargs)
+
+NotSupportedFiletype(Exception)
+
+--- Functions ---
 
 is_rasterbook(path, basic_return=True)
-job_handler(fun)
-class NotSupportedFiletype(Exception)
 raise_if_not_supported(srcdoc, supported_extensions)
-add_method_dec(method, method_name)
+job_handler(fun)
 
-
---- Implemented backends ---
+    --- Implemented backends ---
 @DJVUmaker.register_backend
 @job_handler
 @add_method_dec(pdf2djvu_custom_printing, 'printing')
@@ -116,7 +129,7 @@ pdf2djvu(srcdoc, cmdflags, djvu, preferences)
 @job_handler
 djvudigital(srcdoc, cmdflags, djvu, preferences)
 
---- Non working backends ---
+    --- Non working backends ---
 c44	    (srcdoc, cmdflags=[], log=None)
 cjb2	(srcdoc, cmdflags=[], log=None)
 minidjvu(srcdoc, cmdflags=[], log=None)
@@ -133,6 +146,9 @@ v1.0.1 - 19 Oct 2014 - Joey Korkames - Small bug fixes
 v1.0.0 - 25 Jul 2014 - Joey Korkames - First relase
 
 Main TODOs:
+
+
+(troughout the file TODO are placed)
 
 """
 
@@ -164,7 +180,7 @@ from calibre.utils.podofo import get_podofo
 from calibre.utils.ipc.simple_worker import fork_job as worker_fork_job, WorkerError
 from calibre_plugins.djvumaker.utils import (create_backend_link, create_cli_parser, install_pdf2djvu,
                                              discover_backend, ask_yesno_input, empty_function,
-                                             EmptyClass)
+                                             EmptyClass, add_method_dec)
 
 # if iswindows and hasattr(sys, 'frozen'):
 #     # CREATE_NO_WINDOW=0x08 so that no ugly console is popped up
@@ -754,13 +770,6 @@ def pdf2djvu_custom_printing(readout, pages, images):
         # TODO: better notifications
         return readout, (page+1)/(pages+3), 'Converting....'
     return readout, None, None
-
-# DEBUG DEL
-def add_method_dec(method, method_name):
-    def inner(fun):
-        setattr(fun, method_name, method)
-        return fun
-    return inner
 
 @DJVUmaker.register_backend
 @job_handler
