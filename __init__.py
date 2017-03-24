@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""djvumaker Calibre plugin - easy method to convert PDF documents to DJVU
+"""
+djvumaker Calibre plugin - easy method to convert PDF documents to DJVU
 
 Plugin uses other tools (further called backends) to make user-friendly conversion
 of PDF documents (like scanned books) to lightweight DJVU format inside Calibre (e-book manager).
@@ -273,7 +274,7 @@ if (islinux or isbsd or isosx) and getattr(sys, 'frozen', False):
 prints = partial(prints, '{}:'.format(PLUGINNAME)) # for easy printing
 
 # DEBUG UNCOMMENT
-DEBUG = False
+DEBUG = False # calibre.constants.DEBUG also runs for CLI
 
 if DEBUG:
     printsd = partial(prints, '{}:'.format('DEBUG')) # for DEBUG msgs
@@ -282,7 +283,7 @@ else:
 
 # -- Calibre Plugin class --
 class DJVUmaker(FileTypePlugin, InterfaceActionBase): # multiple inheritance for gui hooks!
-#NODOC
+    #NODOC
     name                = PLUGINNAME # Name of the plugin
     description         = ('Convert raster-based document files (Postscript, PDF) to DJVU with GUI'
                           ' button and on-import')
@@ -732,7 +733,7 @@ def is_rasterbook(path, basic_return=True):
     pages = pdf.page_count()
     printsd('\n number of pages: {}'.format(pages))
     try:
-        # without try statment, a lot of PDFs causes podofo.Error:
+        # without try statement, a lot of PDFs causes podofo.Error:
         # Error: A NULL handle was passed, but initialized data was expected.
         # It's probably a bug in calibre podofo image_count method:
         # https://github.com/kovidgoyal/calibre/blob/master/src/calibre/utils/podofo/doc.cpp#L146
@@ -745,7 +746,7 @@ def is_rasterbook(path, basic_return=True):
 
         # reraise exception if other exception than podofo.Error
         # str comparison because of problems with importing cpp Error
-        # TODO: error type in except statment
+        # TODO: error type in except statement
         if object.__str__(error_info[0]) != "<class 'podofo.Error'>":
             raise
         else:
@@ -826,7 +827,7 @@ def job_handler(fun):
                         readout = proc.stdout.readline()
                         if force_unicode(readout).strip() != '':
                             # TODO: better custom pringing
-                            if hasattr(fun, 'printing'): # DEBUG DEL
+                            if hasattr(fun, 'printing'):
                                 readout, progress, msg = fun.printing(readout, pages, images)
                                 if progress is not None:
                                     notifications.put((progress, msg))
@@ -896,7 +897,7 @@ def pdf2djvu(srcdoc, cmdflags, djvu, preferences):
         djvu = EmptyClass()
         djvu.name, _ = os.path.splitext(srcdoc)
         djvu.name += '.djvu'
-    # DEBUG DEL:
+    # DEBUG COMMENT:
     # return [pdf2djvu_path, '-v', '-o', djvu.name, srcdoc] # verbose
     return [pdf2djvu_path] + cmdflags + ['-o', djvu.name, srcdoc]
 
